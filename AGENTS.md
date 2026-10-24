@@ -5,7 +5,7 @@ Noair is a Swedish consumer-facing packaging-feedback pilot for Boxon.
 The user is a non-developer who wants to request small changes in Swedish.
 Explain results in Swedish. Keep changes focused; do not rebuild the app in
 another framework or introduce a CMS unless explicitly requested.
-This repository is a test setup, not a live website or an approved production system.
+This repository is a test setup, not a live production website.
 
 ## Source of truth
 - `static/index.html`: public site, inline report form and admin markup.
@@ -27,8 +27,24 @@ validation limits, privacy confirmation, optional contact permission, receipt,
 deletion flow or private report handling for ordinary text/image/layout changes.
 The upload limit is 1-3 JPG/PNG/WebP images, maximum 8 MB per image.
 Never make report images publicly accessible or add email/CRM sends or tracking.
-Do not change authentication, database schema or deployment settings during a
+Do not change authentication, database schema or production deployment settings during a
 cosmetic change. Flag a request that crosses those boundaries before proceeding.
+
+## Default change workflow
+For ordinary requested website changes, work directly from the latest `main`.
+After the requested change is complete:
+1. Rebuild `noair-forhandsvisning.html` when the UI changed.
+2. Run the available automated checks.
+3. If the checks pass, commit the requested change and push it to `main` automatically.
+4. Do not stop after editing only inside the Codex cloud workspace.
+5. Report the commit and whether the GitHub Pages preview deployment was triggered.
+If the user explicitly says not to push, to only preview, or to create a branch/PR,
+follow that instruction instead.
+
+The public GitHub Pages URL is a test/demo environment. Pushing to `main` is intended
+to refresh that preview automatically through the existing Pages workflow.
+This approval applies only to the GitHub Pages test preview, not to AWS, DNS,
+`www.noair.se`, production data collection or any production environment.
 
 ## Quick visual preview (no credentials needed)
 Use Python 3.13 where available. From the repository root:
@@ -41,7 +57,7 @@ Synthetic reports stay in browser memory and disappear on reload. The demo admin
 is not authenticated and is NOT a production admin. No report collection occurs.
 Restart the preview process after source edits. Inside an isolated preview
 sandbox only, binding to 0.0.0.0 may be required by a browser tool. Do not expose
-this demo or the repo publicly without explicit approval.
+any environment other than the approved GitHub Pages demo without explicit approval.
 A screenshot is not the same as a running user-accessible preview; state which
 one you actually produced. Do not invent a preview link.
 
@@ -70,15 +86,14 @@ Use `tests/` explicitly for pytest: `test_browser.py` is a separate executable t
 
 After UI edits rebuild `noair-forhandsvisning.html`, run available tests, inspect
 mobile and desktop widths, and report exactly what passed and what was not run.
-If making a pull request, include the source and rebuilt preview; report in plain
-Swedish what changed and which checks were performed. A merge is not deployment.
 
 ## Secrets and publishing boundaries
 Only synthetic test data belong in this repository. Do not add real report images,
 customer details, personal data, passwords, API keys, tokens, filled `.env` files,
 or databases. `.env.example` contains blank placeholders, not production secrets.
-Check `.gitignore` is present, including after browser-based initial upload.
+Check `.gitignore` is present.
 Do not connect AWS, change DNS, enable public collection, buy services, or publish
-anything without an explicit separate request. Do not imply this setup has a
-production pipeline. The original Dockerfile is reference code, not an active deploy.
+to a production environment without an explicit separate request.
+The existing GitHub Pages deployment is an approved public demo only.
+Do not imply this setup has a production pipeline.
 AGENTS.md is guidance, not a technical security boundary; keep permissions narrow.
