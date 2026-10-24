@@ -39,32 +39,88 @@ Befintliga sparade utkast skrivs inte över vid en uppdatering av mallarna. Öpp
 utkastet och välj en ny formulering för att använda säljpitchen även där. Det
 ursprungliga **Visa kontaktutkast** använder också den nya säljpitchen.
 
-## Offentliga kontakter på servern
+## Kontaktpersoner och flerval
 
-Sätt `CONTACT_LOOKUP_ENABLED=1` och starta om servern för automatisk sökning när
-en rapport med företagswebbplats kommer in. Knappen i redigeraren kan göra en ny
-sökning; för äldre rapporter används knappen. Funktionen är avstängd som standard.
+Kontaktförslag har kryssrutor. Välj enskilda personer eller **Välj alla hittade**.
+**Avmarkera hittade** lämnar manuellt tillagda kontakter kvar. Alla valda personer
+kan redigeras separat: namn, roll, e-post och källänk. Lägg till fler med
+**Lägg till kontaktperson manuellt**. Högst 30 kontakter kan väljas per utkast;
+samma e-postadress räknas bara en gång, även med olika stora/små bokstäver.
 
-Sökningen läser startsidan och upp till tre ytterligare HTTPS-sidor för kontakt,
-team eller inköp på samma domän. Den hämtar publicerade e-postadresser, visar
-källänk/datum/källtext och prioriterar träffar där källtexten nämner emballage,
-förpackning eller inköp. Den uppfinner inte personnamn, titlar eller mejladresser.
-En prioriterad träff bevisar inte att personen fattar inköpsbeslut. Verifiera
-kontakten mot källan; ibland finns bara en allmän adress eller ingen träff.
+Personer utan offentlig e-post kan väljas och kompletteras, men hela utskicket
+kan inte läggas i klarkön förrän alla valda mottagare har giltiga adresser och
+medarbetaren har verifierat kontakterna. Varje mottagare får ett eget mejl när
+eMarketeer anslutits; adresser delas inte via gemensam To/CC. Status och
+idempotensnyckel hålls separat per adress. Ett redan bekräftat skickat mejl
+skickas inte om ifall en annan mottagare behöver ett nytt försök. Okänd status
+stäms av per mottagare efter kontroll i mejltjänstens logg.
 
-Webbplatser som kräver JavaScript/inloggning, blockerar automatiska anrop eller
-inte publicerar kontaktuppgifter kan ge tomt resultat. Egna verifierade
-kontakter kan alltid matas in. Ingen extern sök-/kontaktleverantör är ansluten.
+## Vad som fungerar i GitHub Pages-testet
 
-Servern behöver DNS och utgående HTTPS till företagens publika webbplatser.
-Hämtaren använder direkt TLS, med verifierat servercertifikat och en låst,
-kontrollerad publik IP-adress per anslutning; privata IP-adresser, osäkra
-protokoll, andra portar och omdirigeringar till andra domäner följs inte.
-Den använder inte maskinens HTTP_PROXY, skickar inga rapporter till webbplatsen
-och loggar inte kundinnehåll. Miljöer som endast har proxybaserad utgående
-trafik behöver en anpassad, lika skyddad transport innan kontaktsökningen fungerar.
-Kontaktsökningen är testad med syntetiska webbplatssvar; åtkomst till riktiga
-företagswebbplatser i er driftmiljö är ännu inte verifierad.
+GitHub Pages kör bara statiska filer. Omladdning raderar demots arbetsminne,
+men det ger inte sidan möjlighet att köra Python eller kringgå andra
+webbplatsers CORS-regler. Automatisk kontakthämtning kan därför inte aktiveras
+på Pages genom enbart en kodpush. Rapportvyn visar detta uttryckligen vid sökknappen.
+
+Testversionen har riktiga länkar till sökningar efter företagets kontaktpersoner,
+inköpsansvariga, kundcase och nyhetsartiklar. Du kan öppna källorna själv, lägga
+till personer manuellt eller klistra in offentlig kontakttext och låta
+webbläsaren hitta e-postadresser lokalt. Det är en import av den text du klistrar
+in, inte automatisk hämtning. Namn/roller kan fyllas i manuellt. Knappen
+**Visa fiktiva testkontakter** är en separat, tydligt märkt simulering.
+
+Inga verkliga kontakter sparas i projektfiler eller skickas till söktjänsten i
+demon. De ligger i sidans minne och försvinner vid omladdning. Lägg aldrig en
+söktjänsts API-nyckel i Pages eller i webbläsarens JavaScript.
+
+## Automatisk sökning på servern
+
+Serverkoden börjar med angiven företagswebbplats. Kontaktsökningen är aktiverad
+som standard (`CONTACT_LOOKUP_ENABLED=1`); sätt 0 för att stänga av den.
+Nya rapporter med webbplats söker automatiskt i bakgrunden. Finns ingen webbplats
+kan en ansluten söktjänst söka utifrån företagsnamnet. För äldre rapporter,
+eller för att försöka igen, används sökknappen. En medarbetare kan också ange
+en företagswebbplats i redigeraren när rapporten saknar den; rapportens ursprungliga
+uppgifter ändras inte av detta.
+
+Sökningen läser startsidan och upp till tre ytterligare sidor för kontakt/team/
+inköp på samma domän. Vid anslutet Brave Search-API fortsätter den med öppna
+webbträffar, exempelvis leverantörers kundcase och nyhetsartiklar. Sökfrågan
+innehåller företagsnamn och yrkes-/ämnesord, aldrig kundens bilder, kommentar
+eller kontaktuppgifter. Sökresultatens källsidor hämtas och granskas; externa
+kontaktuppgifter kräver lokal källtext eller strukturerad persondata med koppling
+till målföretaget. En tidnings eller leverantörs allmänna redaktions-/pressadress
+ska inte väljas enbart för att företaget nämns någon annanstans på sidan.
+
+Resultaten visar källänk, datum, källtext, eventuellt namn/roll och publicerad
+adress. Personnamn från löptext är förslag som måste verifieras. Strukturerade
+Person/worksFor-uppgifter läses där de finns. Personer kan hittas utan publicerad
+mejladress; ingen adress gissas. Prioritet ges åt emballage, förpackning, inköp
+och logistik. Yrkesroll bevisar inte att personen fattar inköpsbeslut.
+
+Om extern sökning inte är ansluten fungerar webbplatsdelen ändå och gränssnittet
+visar att nätet inte har sökts igenom. Resultatlösa sökningar, saknad anslutning,
+misslyckad API-anslutning och sidor som inte kan läsas visas med status i vyn.
+JavaScript-/inloggningskrävande eller blockerande sidor kan sakna resultat.
+
+För extern sökning behövs `BRAVE_SEARCH_API_KEY` säkert i serverns inställningar.
+Tjänstekonto, betalning och nyckel har inte skapats. Adaptern använder Brave
+Searchs HTTPS-webbendpoint och skickar inte nyckeln vid omdirigeringar. Den har
+verifierats med syntetiska API-svar; ingen autentiserad liveförfrågan har kunnat
+verifieras utan nyckel. Ingen extern kontakt-/söktjänst finns i den nuvarande driften.
+
+Servern behöver DNS och utgående HTTPS till företagens/källornas publika
+webbplatser, samt `api.search.brave.com` för webbsökning. Webbplatshämtaren
+använder verifierad TLS och en låst publik IP-adress per anslutning. Privata IP,
+osäkra protokoll och särskilda portar tillåts inte. Externa omdirigeringar
+valideras före hämtning. Antal sidor, lästid och svarsstorlek begränsas.
+Hämtaren använder direkt trafik, inte HTTP_PROXY; proxybaserad serverdrift
+behöver motsvarande skyddad transport. Kontaktsökning mot riktiga webbplatser
+måste verifieras i den valda driftmiljön innan funktionen kallas aktiverad där.
+
+För livefunktion återstår alltså att välja och ansluta serverdrift för den
+privata FastAPI-rapportvyn och, för bred webbsökning, ansluta söktjänsten.
+Detta har inte gjorts genom en GitHub Pages-push.
 
 ## eMarketeer: senare anslutning
 

@@ -12,7 +12,7 @@ HASH=PH.hash(PASSWORD)
 @pytest.fixture
 def config(tmp_path):
     c=config_from_env()
-    c.update(secret='test-secret-'*5,admin_username='admin',admin_password_hash=HASH,data_dir=str(tmp_path),mode='development',public_origin='http://testserver',submissions_enabled=True)
+    c.update(contact_lookup_enabled=False,secret='test-secret-'*5,admin_username='admin',admin_password_hash=HASH,data_dir=str(tmp_path),mode='development',public_origin='http://testserver',submissions_enabled=True)
     return c
 
 @pytest.fixture

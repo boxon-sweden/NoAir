@@ -12,8 +12,7 @@ import re
 import socket
 import ssl
 import time
-from html.parser import HTMLParser
-from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
 EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,63}")
 LABELS = {'air': 'mycket tomrum', 'filler': 'mycket fyllnadsmaterial', 'oversized': 'en stor låda i förhållande till innehållet', 'protection': 'frågor om produktskyddet', 'other': 'förpackningens utformning'}
@@ -99,34 +98,6 @@ def draft_for(report, variant=0):
     return result
 
 
-class PublicPage(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.links = []
-        self.parts = []
-        self.ignored = 0
-
-    def handle_starttag(self, tag, attrs):
-        if tag in ('script', 'style'):
-            self.ignored += 1
-        if tag == 'a':
-            href = dict(attrs).get('href', '')
-            if len(href) < 2048:
-                self.links.append(href)
-        if tag in ('p', 'div', 'li', 'br', 'section'):
-            self.parts.append('\n')
-
-    def handle_endtag(self, tag):
-        if tag in ('script', 'style'):
-            self.ignored = max(0, self.ignored - 1)
-        if tag in ('p', 'div', 'li', 'section'):
-            self.parts.append('\n')
-
-    def handle_data(self, data):
-        if not self.ignored:
-            self.parts.append(data)
-
-
 def public_url(url):
     p = urlsplit(url)
     if (p.scheme != 'https' or not p.hostname or p.username or p.password or
@@ -199,59 +170,6 @@ def fetch_public(url, timeout=5):
         conn.close()
 
 
-def lookup_contacts(website, fetch=None):
-    fetch = fetch or fetch_public
-    website = public_url(website)
-    host = urlsplit(website).hostname.removeprefix('www.')
-    pending, visited, found = [website], set(), {}
-    deadline = time.monotonic() + 22
-    errors = 0
-    while pending and len(visited) < 4 and time.monotonic() < deadline:
-        url = public_url(pending.pop(0))
-        if url in visited or urlsplit(url).hostname.removeprefix('www.') != host:
-            continue
-        visited.add(url)
-        try:
-            result = fetch(url, timeout=min(5, max(1, deadline-time.monotonic())))
-            if 'redirect' in result:
-                target = public_url(result['redirect'])
-                if urlsplit(target).hostname.removeprefix('www.') == host:
-                    pending.insert(0, target)
-                continue
-            page = PublicPage(); page.feed(result['html'])
-            lines = [' '.join(line.split())[:500] for line in ''.join(page.parts).splitlines() if line.strip()]
-            emails = set(EMAIL.findall('\n'.join(lines)))
-            emails.update(unquote(h[7:]).split('?')[0] for h in page.links if h.lower().startswith('mailto:'))
-            for email in sorted(emails):
-                if not valid_email(email):
-                    continue
-                context = next((line for line in lines if email in line), '')[:300]
-                candidate = {'email': email, 'source': url, 'context': context,
-                             'priority': bool(ROLE.search(context)), 'name': '', 'role': '', 'checked_at': time.strftime('%Y-%m-%d', time.gmtime())}
-                if email.lower() not in found or candidate['priority']:
-                    found[email.lower()] = candidate
-            for href in page.links:
-                if not re.search(r'kontakt|contact|team|inkop|inköp|purchase|procurement', href, re.I):
-                    continue
-                target = urljoin(url, href)
-                try:
-                    target = public_url(target)
-                    if urlsplit(target).hostname.removeprefix('www.') == host:
-                        pending.append(target)
-                except ValueError:
-                    pass
-        except (ValueError, OSError, http.client.HTTPException, LookupError):
-            errors += 1
-    contacts = sorted(found.values(), key=lambda x: not x['priority'])[:20]
-    if not contacts:
-        message = 'Ingen offentlig e-postadress hittades. Lägg till en verifierad kontakt manuellt.'
-    else:
-        message = 'Offentliga kontaktförslag hittades. Kontrollera företag och inköpsansvar mot källan.'
-    if errors:
-        message += ' En eller flera sidor kunde inte läsas.'
-    return {'contacts': contacts, 'lookup_note': message}
-
-
 class DeliveryUncertain(Exception):
     pass
 
@@ -276,5 +194,37 @@ def send_message(config, draft):
     config['delivery_adapter']({
         'from_email': config['mail_from'], 'from_name': config.get('mail_from_name', 'Boxon'),
         'to_email': draft['recipient_email'], 'subject': draft['subject'], 'body': draft['body'],
-        'idempotency_key': hashlib.sha256(draft['report_id'].encode()).hexdigest(),
+        'idempotency_key': hashlib.sha256((draft['report_id']+'|'+draft['recipient_email'].casefold()).encode()).hexdigest(),
     })
+
+
+def normalize_recipients(raw, legacy=None):
+    """Validate selected/manual contacts without guessing missing email addresses."""
+    if raw is None:raw=[]
+    if not isinstance(raw,list) or len(raw)>30:
+        raise ValueError('Välj högst 30 kontaktpersoner.')
+    if not raw and legacy and any(legacy.get(k) for k in ('email','name','role')):
+        raw=[legacy]
+    recipients=[];seen=set()
+    for item in raw:
+        if not isinstance(item,dict):raise ValueError('Kontrollera kontaktpersonerna.')
+        contact={}
+        for field,limit in {'name':160,'role':160,'email':254,'source_url':2048}.items():
+            value=item.get(field,'')
+            if not isinstance(value,str) or len(value)>limit or any(c in value for c in '\r\n\x00'):
+                raise ValueError('Kontrollera kontaktpersonernas uppgifter.')
+            contact[field]=value.strip()
+        if not any(contact.values()):continue
+        if contact['email'] and not valid_email(contact['email']):raise ValueError('En kontaktperson har en ogiltig e-postadress.')
+        if contact['source_url']:contact['source_url']=public_url(contact['source_url'])
+        key=contact['email'].casefold() if contact['email'] else '|'.join(contact.values()).casefold()
+        if key in seen:continue
+        seen.add(key);recipients.append(contact)
+    return recipients
+
+
+def delivery_state(deliveries, recipients):
+    states=[deliveries.get(r['email'].casefold(),{}).get('state','pending') for r in recipients]
+    if states and all(s=='sent' for s in states):return 'sent'
+    if any(s in {'sending','uncertain'} for s in states):return 'uncertain'
+    return 'failed'

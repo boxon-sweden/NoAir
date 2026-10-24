@@ -112,6 +112,9 @@ Kontrollerad 2026-10-24. Gränssnitt och abonnemang kan ändras.
 
 Boxons rapportvy har ett tillägg med redigerbara kontaktutkast, alternativa
 formuleringar, offentliga kontaktförslag och en kö för granskade meddelanden.
-GitHub Pages visar en simulering. eMarketeer-anslutningen görs senare och
+Flera kontakter kan väljas med kryssrutor eller Välj alla och redigeras separat.
+På GitHub Pages används söklänkar och lokal import av offentlig kontakttext;
+automatisk hämtning kräver serverdrift och bred webbsökning en söktjänst.
+eMarketeer-anslutningen görs senare och
 verkliga utskick är avstängda. Se [KONTAKTFLODE.md](KONTAKTFLODE.md) för
 serverinställningar, begränsningar och testkommandon.

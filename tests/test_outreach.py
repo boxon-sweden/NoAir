@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import outreach
+import contact_research
 from app import create_app, database, init_database, purge
 from tests.test_app import config, client, csrf, submit, login, data
 
@@ -187,7 +188,7 @@ def test_public_contact_discovery_sources_priority_and_scope():
     }
     requested=[]
     def fetch(url,timeout=5):requested.append(url);return {'html':pages[url]}
-    result=outreach.lookup_contacts('https://butik.example',fetch=fetch)
+    result=contact_research.research('Butik','https://butik.example/',fetch=fetch)
     assert result['contacts'][0]['email']=='inkop@butik.example'
     assert result['contacts'][0]['priority'] is True
     assert result['contacts'][0]['source']=='https://butik.example/kontakt'
@@ -205,15 +206,15 @@ def test_lookup_rejects_private_dns_targets(monkeypatch,address):
 def test_lookup_does_not_follow_redirects_to_other_hosts():
     calls=[]
     def fetch(url,timeout=5):calls.append(url);return {'redirect':'https://127.0.0.1/kontakt'}
-    result=outreach.lookup_contacts('https://butik.example/',fetch=fetch)
+    result=contact_research.research('Butik','https://butik.example/',fetch=fetch)
     assert len(calls)==1 and result['contacts']==[]
 
 
 def test_auto_lookup_after_submission_and_manual_refresh(client,config,monkeypatch):
     config['contact_lookup_enabled']=True
     calls=[]
-    def lookup(website):calls.append(website);return {'contacts':[],'lookup_note':'Ingen publicerad kontakt.'}
-    monkeypatch.setattr(outreach,'lookup_contacts',lookup)
+    def lookup(company,website,**kwargs):calls.append(website);return {'contacts':[],'lookup_note':'Ingen publicerad kontakt.'}
+    monkeypatch.setattr(contact_research,'research',lookup)
     report_id=submit(client).json()['id'];token=login(client)
     m=client.get(message_path(report_id)).json()
     assert m['lookup_state']=='done' and len(calls)==1
@@ -286,3 +287,97 @@ def test_pitch_proposal_changes_with_protection_and_filler():
     assert 'hörlurar' not in filler
     base['category']='Elektronik'
     assert 'en leverans av elektronik' in outreach.draft_for(base)['body']
+
+
+def test_multiple_recipients_saved_deduplicated_and_all_need_addresses(client):
+    report_id,token,m=ready(client)
+    m['recipients']=[{'email':m['recipient_email'],'name':'Anna Exempel','role':'Inköp','source_url':'https://butik.example/kontakt'},
+                     {'email':'annan@butik.example','name':'Erik Exempel','role':'Logistik','source_url':''},
+                     {'email':'ANNAN@BUTIK.EXAMPLE','name':'Dubblett','role':'','source_url':''}]
+    saved=client.put(message_path(report_id),json=m,headers={'X-CSRF-Token':token})
+    assert saved.status_code==200 and len(saved.json()['recipients'])==2
+    invalid=saved.json();invalid['recipients'].append({'email':'','name':'Namn utan adress','role':'Inköp','source_url':''})
+    assert client.put(message_path(report_id),json=invalid,headers={'X-CSRF-Token':token}).status_code==400
+    invalid['state']='draft'
+    assert client.put(message_path(report_id),json=invalid,headers={'X-CSRF-Token':token}).status_code==200
+
+
+def test_multiple_recipients_receive_individual_envelopes(client,config):
+    delivered=[];config.update(mail_enabled=True,mail_from='sender@boxon.example',delivery_adapter=delivered.append)
+    report_id,token,m=ready(client)
+    m['recipients']=[{'email':m['recipient_email'],'name':'Anna','role':'','source_url':''},{'email':'annan@butik.example','name':'Erik','role':'','source_url':''}]
+    m=client.put(message_path(report_id),json=m,headers={'X-CSRF-Token':token}).json()
+    result=send(client,report_id,token,m['version'])
+    assert result.status_code==200 and result.json()['state']=='sent'
+    assert [item['to_email'] for item in delivered]==['inkop@butik.example','annan@butik.example']
+    assert delivered[0]['idempotency_key']!=delivered[1]['idempotency_key']
+    assert all('cc' not in item and 'bcc' not in item for item in delivered)
+    assert len(result.json()['deliveries'])==2
+
+
+def test_partial_unknown_send_does_not_resend_successful_recipient(client,config):
+    delivered=[];fail=[True]
+    def adapter(item):
+        delivered.append(item['to_email'])
+        if item['to_email']=='annan@butik.example' and fail[0]:raise TimeoutError()
+    config.update(mail_enabled=True,mail_from='sender@boxon.example',delivery_adapter=adapter)
+    report_id,token,m=ready(client)
+    m['recipients']=[{'email':m['recipient_email'],'name':'Anna','role':'','source_url':''},{'email':'annan@butik.example','name':'Erik','role':'','source_url':''}]
+    m=client.put(message_path(report_id),json=m,headers={'X-CSRF-Token':token}).json()
+    result=send(client,report_id,token,m['version']).json()
+    assert result['state']=='uncertain'
+    assert result['deliveries']['inkop@butik.example']['state']=='sent'
+    resolved=client.post(message_path(report_id)+'/resolve',json={'version':result['version'],'state':'draft','recipient_email':'annan@butik.example','checked_provider_log':True},headers={'X-CSRF-Token':token})
+    assert resolved.status_code==200 and resolved.json()['state']=='draft'
+    m=resolved.json();m.update(state='ready',content_checked=True)
+    m=client.put(message_path(report_id),json=m,headers={'X-CSRF-Token':token}).json()
+    fail[0]=False
+    assert send(client,report_id,token,m['version']).json()['state']=='sent'
+    assert delivered.count('inkop@butik.example')==1 and delivered.count('annan@butik.example')==2
+
+
+def test_existing_database_adds_multicontact_columns_without_losing_primary(client,config):
+    report_id,token,m=ready(client)
+    with database(config) as db:
+        db.execute('ALTER TABLE outreach DROP COLUMN recipients')
+        db.execute('ALTER TABLE outreach DROP COLUMN deliveries')
+    init_database(config)
+    read=client.get(message_path(report_id)).json()
+    assert read['body']==m['body'] and read['recipients'][0]['email']==m['recipient_email']
+
+
+def test_search_api_uses_entered_website_and_returns_visible_results(client,config,monkeypatch):
+    config['contact_lookup_enabled']=True
+    calls=[]
+    def research(company,website,**kwargs):
+        calls.append((company,website))
+        return {'contacts':[{'name':'Anna Andersson','role':'Inköpschef','email':'anna@butik.example','source':website,'origin':'website'}], 'lookup_note':'1 kontaktförslag hittades.'}
+    monkeypatch.setattr(contact_research,'research',research)
+    report_id=submit(client).json()['id'];token=login(client)
+    response=client.post(f'/api/admin/reports/{report_id}/contacts',json={'website':'https://butik.example/kontakt'},headers={'X-CSRF-Token':token})
+    assert response.status_code==200
+    result=client.get(message_path(report_id)).json()
+    assert result['contacts'][0]['name']=='Anna Andersson' and result['lookup_state']=='done'
+    assert calls[-1][1]=='https://butik.example/kontakt'
+    assert '1 kontaktförslag' in result['lookup_note']
+
+
+@pytest.mark.parametrize('recipient_state,expected',[('sent','sent'),('pending','draft')])
+def test_interrupted_batch_can_be_reconciled_without_losing_completed_status(client,config,recipient_state,expected):
+    report_id,token,m=ready(client)
+    old=(datetime.now(timezone.utc)-timedelta(minutes=6)).isoformat()
+    with database(config) as db:
+        db.execute("UPDATE outreach SET state='sending',updated_at=?,deliveries=? WHERE report_id=?",(old,json.dumps({m['recipient_email']:{'state':recipient_state}}),report_id))
+    response=client.post(message_path(report_id)+'/resolve',json={'version':m['version'],'state':'sent' if recipient_state=='sent' else 'draft','checked_provider_log':True},headers={'X-CSRF-Token':token})
+    assert response.status_code==200 and response.json()['state']==expected
+
+
+def test_report_without_website_still_triggers_configured_web_search(client,config,monkeypatch):
+    config.update(contact_lookup_enabled=True,search_api_key='synthetic-key')
+    calls=[]
+    def research(company,website,**kwargs):
+        calls.append((company,website,kwargs['api_key']))
+        return {'contacts':[],'lookup_note':'Inga offentliga kontakter hittades.'}
+    monkeypatch.setattr(contact_research,'research',research)
+    response=submit(client,data(website=''))
+    assert response.status_code==201 and calls==[('Testbutik','','synthetic-key')]

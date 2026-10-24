@@ -157,7 +157,7 @@ with tempfile.TemporaryDirectory(prefix='noair-v2-qa-') as tmp_string:
         context.close()
         live_tested=os.getenv('NOAIR_OFFLINE_QA')!='1'
         if live_tested:
-            env=os.environ.copy();env.update(APP_ENV='development',SECRET_KEY='qa-only-secret-'*5,ADMIN_PASSWORD_HASH=PasswordHasher().hash(PASSWORD),ADMIN_USERNAME='admin',DATA_DIR=str(tmp/'data'),SUBMISSIONS_ENABLED='1',PUBLIC_ORIGIN='http://127.0.0.1:8877')
+            env=os.environ.copy();env.update(CONTACT_LOOKUP_ENABLED='0',APP_ENV='development',SECRET_KEY='qa-only-secret-'*5,ADMIN_PASSWORD_HASH=PasswordHasher().hash(PASSWORD),ADMIN_USERNAME='admin',DATA_DIR=str(tmp/'data'),SUBMISSIONS_ENABLED='1',PUBLIC_ORIGIN='http://127.0.0.1:8877')
             process=subprocess.Popen([sys.executable,'-m','uvicorn','asgi:app','--host','127.0.0.1','--port','8877','--no-access-log'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
             try:
                 for _ in range(80):
