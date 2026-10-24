@@ -1,0 +1,11 @@
+NOAIR + CODEX + GITHUB
+
+Läs README.md.
+
+1. Skapa ett privat GitHub-projekt med gratisplanen.
+2. Ladda upp INNEHÅLLET i denna mapp en gång, inte ZIP-filen.
+3. Koppla projektet till Codex.
+4. Klistra in FORSTA-PROMPTEN.txt i Codex.
+
+Ingen domän, livesajt eller AWS-miljö är kopplad.
+Ingen riktig insamling sker i förhandsvisningen.

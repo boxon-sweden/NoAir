@@ -1,0 +1,15 @@
+Läs AGENTS.md och README.md. Det här är Noair, en befintlig testsajt.
+
+Kontrollera att projektet går att köra och gör sedan en enda liten teständring:
+Byt texten "Varför all luft?" i startsidans huvudrubrik till "Mindre luft, tack."
+Behåll de två första raderna "Stor låda." och "Liten grej." och anpassa sidtiteln
+så att den stämmer. Behåll design, formulärfrågor, validering och funktioner.
+
+Starta den lokala demonstrationen med preview.py och visa resultatet med din
+förhandsvisning eller skärmbilder i dator- och mobilbredd. Säg tydligt vilket
+visningssätt du faktiskt kan erbjuda; hitta inte på en publik länk.
+Bygg om noair-forhandsvisning.html och kör tillgängliga tester.
+
+Förbered ett ändringsförslag (pull request) som jag kan granska. Slå inte ihop
+det automatiskt. Publicera inget online, anslut inte AWS och ändra inte domänen.
+Använd inga riktiga kunduppgifter eller hemligheter. Sammanfatta på enkel svenska.

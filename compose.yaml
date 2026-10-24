@@ -1,0 +1,16 @@
+# Local Docker pilot. Configure .env first. Public deployment needs an HTTPS proxy.
+services:
+  noair:
+    build: .
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - noair-data:/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  noair-data:
