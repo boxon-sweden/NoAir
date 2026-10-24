@@ -1,5 +1,6 @@
 name: Deploy NoAir preview to GitHub Pages
 
+# Publishes only the safe static demo from /static.
 on:
   push:
     branches: ["main"]
