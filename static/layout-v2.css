@@ -319,3 +319,47 @@ body[data-page="admin"] { background:var(--paper); }
 .na-report-card .issue-field legend::before { content:"3. "; }
 .na-report-card label[for="comment"]::before { content:"4. "; }
 .na-report-card label[for="category"]::before { content:"5. "; }
+
+/* Illustrative packaging comparison, between about and FAQ. */
+.na-case { padding-bottom:clamp(52px,6vw,96px); }
+.na-case-card { padding:clamp(24px,4vw,64px); background:#eef3e7; border:1px solid #e3eadb; border-radius:28px; }
+.na-case-top { display:flex; justify-content:space-between; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:23px; }
+.na-case-top .eyebrow { color:#618834; margin:0; }
+.na-case-badge { padding:8px 12px; border:1px solid #cbd9bd; border-radius:24px; font-size:12px; line-height:1.5; color:#526749; }
+.na-case h2 { font-size:clamp(36px,4.5vw,68px); letter-spacing:-.05em; line-height:1.1; }
+.na-case h2 span { color:#526d48; }
+.na-case-intro { max-width:900px; margin:24px 0 34px; font-size:clamp(16px,1.5vw,23px); line-height:1.7; color:#607064; }
+.na-case-comparison { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:clamp(20px,5vw,76px); position:relative; }
+.na-case-comparison figure { margin:0; min-width:0; }
+.na-case-photo { position:relative; overflow:hidden; border-radius:18px; background:#e5e3dc; aspect-ratio:3 / 2; }
+.na-case-photo img { display:block; width:200%; max-width:none; height:100%; object-fit:cover; }
+.na-case-photo-after img { transform:translateX(-50%); }
+.na-case-label { position:absolute; left:18px; top:18px; padding:10px 17px; border-radius:12px; background:var(--paper); color:var(--ink); font-size:18px; font-weight:700; box-shadow:0 1px 5px #18271f1a; }
+.na-case-photo-after .na-case-label { background:var(--lime); }
+.na-case-comparison figcaption { margin-top:14px; font-size:15px; color:#526749; line-height:1.6; }
+.na-case-arrow { position:absolute; left:50%; top:calc((100% - 38px) / 2); transform:translate(-50%,-50%); display:grid; place-items:center; background:white; border-radius:50%; width:64px; height:64px; color:var(--forest); font-size:34px; }
+.na-case-benefits { list-style:none; padding:0; margin:38px 0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; }
+.na-case-benefits li { display:flex; align-items:center; gap:18px; min-width:0; font-size:clamp(15px,1.4vw,22px); font-weight:600; line-height:1.5; }
+.na-case-icon { display:grid; place-items:center; flex-shrink:0; width:70px; height:70px; border-radius:50%; background:#dff3ac; color:var(--forest); }
+.na-case-icon svg { width:38px; height:38px; }
+.na-case-note { border-top:1px solid #d5dfca; padding-top:23px; margin:0; color:#607064; font-size:14px; line-height:1.7; }
+@media (max-width:1000px) {
+ .na-case-benefits { gap:20px; }
+ .na-case-benefits li { align-items:flex-start; flex-direction:column; gap:12px; font-size:16px; }
+ .na-case-icon { width:56px; height:56px; }
+ .na-case-icon svg { width:32px; height:32px; }
+}
+@media (max-width:600px) {
+ .na-case-card { padding:24px 18px; border-radius:20px; }
+ .na-case-top { gap:10px; margin-bottom:24px; }
+ .na-case h2 { font-size:36px; }
+ .na-case-intro { margin:20px 0 26px; font-size:16px; }
+ .na-case-comparison { grid-template-columns:1fr; gap:42px; }
+ .na-case-photo { border-radius:12px; }
+ .na-case-label { left:12px; top:12px; padding:8px 13px; font-size:16px; }
+ .na-case-arrow { top:50%; width:42px; height:42px; font-size:27px; transform:translate(-50%,-50%) rotate(90deg); }
+ .na-case-comparison figcaption { font-size:13px; margin-top:8px; }
+ .na-case-benefits { grid-template-columns:1fr; margin:28px 0; gap:18px; }
+ .na-case-benefits li { flex-direction:row; align-items:center; gap:16px; }
+ .na-case-note { font-size:12px; padding-top:20px; }
+}

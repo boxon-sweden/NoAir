@@ -18,6 +18,8 @@ def build(target=None):
     html=re.sub(r'<script\b[^>]*src="/static/app\.js"[^>]*>\s*</script>','',html)
     hero=base64.b64encode((ROOT/'static/parcel-hero.webp').read_bytes()).decode('ascii')
     html=html.replace('/static/parcel-hero.webp','data:image/webp;base64,'+hero)
+    case=base64.b64encode((ROOT/'static/packaging-case.webp').read_bytes()).decode('ascii')
+    html=html.replace('/static/packaging-case.webp','data:image/webp;base64,'+case)
     js=(ROOT/'static/app.js').read_text(encoding='utf-8')
     html=html.replace('data-demo="false"','data-demo="true"')
     html=html.replace('</body>','<script>\n'+js+'\n</script>\n</body>')
