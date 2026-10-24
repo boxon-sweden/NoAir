@@ -107,3 +107,11 @@ Kontrollerad 2026-10-24. Gränssnitt och abonnemang kan ändras.
 - Codex och abonnemang: https://help.openai.com/en/articles/11369540
 - Codex Cloud: https://developers.openai.com/codex/cloud
 - Projektinstruktioner: https://developers.openai.com/codex/guides/agents-md
+
+## Kontaktutkast och utskickskö
+
+Boxons rapportvy har ett tillägg med redigerbara kontaktutkast, alternativa
+formuleringar, offentliga kontaktförslag och en kö för granskade meddelanden.
+GitHub Pages visar en simulering. eMarketeer-anslutningen görs senare och
+verkliga utskick är avstängda. Se [KONTAKTFLODE.md](KONTAKTFLODE.md) för
+serverinställningar, begränsningar och testkommandon.

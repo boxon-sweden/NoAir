@@ -6,7 +6,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && useradd --create-home --uid 10001 noair \
     && mkdir -p /data/images \
     && chown -R noair:noair /app /data
-COPY --chown=noair:noair app.py asgi.py manage.py ./
+COPY --chown=noair:noair app.py asgi.py manage.py outreach.py ./
 COPY --chown=noair:noair static ./static
 USER noair
 EXPOSE 8000

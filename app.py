@@ -1,7 +1,7 @@
 """Noair pilot: private packaging reports, a browser UI, and an admin API.
 
 Single-instance deployment, persistent disk, HTTPS reverse proxy required.
-No external AI, analytics, image publishing, CRM writes or email sends.
+No external AI, analytics, image publishing or CRM writes. Email is opt-in and manual.
 """
 from __future__ import annotations
 
@@ -26,13 +26,15 @@ from urllib.parse import urlsplit
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError, VerificationError
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+import outreach
 
 ROOT = Path(__file__).resolve().parent
 COOKIE = "noair_session"
@@ -85,6 +87,10 @@ def config_from_env() -> dict:
         "security_logs_description": os.getenv("SECURITY_LOGS_DESCRIPTION", ""),
         "privacy_version": os.getenv("PRIVACY_VERSION", "pilot-draft-1"),
         "retention_days": int(os.getenv("RETENTION_DAYS", "180")),
+        "contact_lookup_enabled": os.getenv("CONTACT_LOOKUP_ENABLED", "0") == "1",
+        "mail_enabled": os.getenv("OUTREACH_MAIL_ENABLED", "0") == "1",
+        "mail_from": os.getenv("OUTREACH_FROM_EMAIL", "Marcus.gustafsson@boxon.com"),
+        "mail_from_name": os.getenv("OUTREACH_FROM_NAME", "Boxon"),
     }
 
 
@@ -123,6 +129,16 @@ def init_database(config: dict) -> None:
         CREATE TABLE IF NOT EXISTS images (
           name TEXT PRIMARY KEY, report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS outreach (
+          report_id TEXT PRIMARY KEY REFERENCES reports(id) ON DELETE CASCADE,
+          recipient_name TEXT NOT NULL DEFAULT '', recipient_role TEXT NOT NULL DEFAULT '',
+          recipient_email TEXT NOT NULL DEFAULT '', source_url TEXT NOT NULL DEFAULT '',
+          subject TEXT NOT NULL, body TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'draft',
+          contact_checked INTEGER NOT NULL DEFAULT 0, content_checked INTEGER NOT NULL DEFAULT 0,
+          contacts TEXT NOT NULL DEFAULT '[]', lookup_note TEXT NOT NULL DEFAULT '',
+          lookup_state TEXT NOT NULL DEFAULT 'idle', lookup_started REAL NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1,
+          updated_at TEXT NOT NULL, sent_at TEXT, error TEXT NOT NULL DEFAULT ''
+        );
         CREATE TABLE IF NOT EXISTS pending_deletions (name TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS sessions (
           token_hash TEXT PRIMARY KEY, csrf TEXT NOT NULL,
@@ -135,6 +151,11 @@ def init_database(config: dict) -> None:
           id INTEGER PRIMARY KEY, at TEXT NOT NULL, action TEXT NOT NULL, report_id TEXT
         );
         """)
+        for row in db.execute("SELECT id,company,category,issues,comment FROM reports WHERE id NOT IN (SELECT report_id FROM outreach)").fetchall():
+            report = dict(row); report['issues'] = json.loads(report['issues'])
+            draft = outreach.draft_for(report, int(hashlib.sha256(row['id'].encode()).hexdigest()[:2], 16) % 3)
+            db.execute("INSERT INTO outreach(report_id,subject,body,updated_at) VALUES(?,?,?,?)",
+                       (row['id'], draft['subject'], draft['body'], iso_now()))
     os.chmod(data / "noair.sqlite3", 0o600)
 
 
@@ -404,7 +425,7 @@ def create_app(config: dict | None = None) -> FastAPI:
         return response
 
     @app.post("/api/reports", status_code=201)
-    async def submit_report(request: Request):
+    async def submit_report(request: Request, background_tasks: BackgroundTasks):
         require_session(request, write=True)
         rate_limit(request, "report", 8, 3600)
         if not c["submissions_enabled"]:
@@ -445,10 +466,15 @@ def create_app(config: dict | None = None) -> FastAPI:
                 db.execute("""INSERT INTO reports(id,company,website,issues,category,comment,email,contact_permission,created_at,deletion_hash,privacy_version,privacy_confirmed_at,contact_permission_at)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", (report_id, values["company"], values["website"], json.dumps(values["issues"]), values["category"], values["comment"], values["email"], int(values["contact_permission"]), now, digest(deletion_token), c["privacy_version"], now, now if values["contact_permission"] else None))
                 db.executemany("INSERT INTO images(name,report_id) VALUES(?,?)", [(name, report_id) for name in names])
+                draft = outreach.draft_for(values, int(report_id[-2:], 16) % 3)
+                db.execute("INSERT INTO outreach(report_id,subject,body,updated_at) VALUES(?,?,?,?)",
+                           (report_id, draft['subject'], draft['body'], now))
         except Exception:
             for name in names:
                 image_path(c, name).unlink(missing_ok=True)
             raise
+        if c.get('contact_lookup_enabled') and values['website']:
+            background_tasks.add_task(find_contacts, report_id)
         return {"id": report_id, "deletion_token": deletion_token}
 
     @app.post("/api/reports/delete")
@@ -495,6 +521,8 @@ def create_app(config: dict | None = None) -> FastAPI:
             raise HTTPException(400, "Granska rapporten och markera kontrollrutan f\u00f6rst.")
         with database(c) as db:
             db.execute("UPDATE reports SET status=?,notes=?,review_checked=? WHERE id=?", (status, notes.strip(), int(checked), report_id))
+            if not checked or status in {'new', 'rejected', 'archived'}:
+                db.execute("UPDATE outreach SET state='draft',content_checked=0,version=version+1,updated_at=? WHERE report_id=? AND state IN ('draft','ready','failed')", (iso_now(), report_id))
         audit(c, "update_report", report_id)
         return {"saved": True}
 
@@ -531,6 +559,177 @@ def create_app(config: dict | None = None) -> FastAPI:
             writer.writerow([csv_safe(row[k]) for k in ["id", "company", "website", "created_at", "status"]]+[csv_safe(", ".join(json.loads(row["issues"])))])
         audit(c, "export")
         return Response("\ufeff"+output.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="noair-oversikt.csv"'})
+
+    def outreach_json(row):
+        result = dict(row)
+        result['contacts'] = json.loads(result['contacts'])
+        result['contact_checked'] = bool(result['contact_checked'])
+        result['content_checked'] = bool(result['content_checked'])
+        return result
+
+    def current_outreach(report_id):
+        active_report(report_id)
+        with database(c) as db:
+            row = db.execute("SELECT * FROM outreach WHERE report_id=?", (report_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Utkastet finns inte.")
+        return outreach_json(row)
+
+    def find_contacts(report_id):
+        started = time.time()
+        try:
+            report = active_report(report_id)
+            with database(c) as db:
+                changed = db.execute("UPDATE outreach SET lookup_state='searching',lookup_started=? WHERE report_id=? AND (lookup_state!='searching' OR lookup_started<?)", (started, report_id, started-120)).rowcount
+            if not changed:
+                return
+            result = outreach.lookup_contacts(report['website'])
+            state = 'done'
+        except Exception:
+            result = {'contacts': [], 'lookup_note': 'Kontaktsökningen kunde inte slutföras. Kontrollera webbplatsen eller lägg till kontakt manuellt.'}
+            state = 'failed'
+        with database(c) as db:
+            db.execute("UPDATE outreach SET contacts=?,lookup_note=?,lookup_state=? WHERE report_id=? AND lookup_started=?",
+                       (json.dumps(result['contacts']), result['lookup_note'], state, report_id, started))
+
+    @app.get("/api/admin/outreach")
+    def list_outreach(request: Request):
+        require_session(request, admin=True)
+        cutoff = (datetime.now(timezone.utc)-timedelta(days=c['retention_days'])).isoformat()
+        with database(c) as db:
+            rows = db.execute("SELECT o.*,r.company,r.status AS report_status,r.review_checked FROM outreach o JOIN reports r ON r.id=o.report_id WHERE r.created_at>=? ORDER BY o.updated_at DESC", (cutoff,)).fetchall()
+        return {'messages': [outreach_json(row) for row in rows],
+                'mail_configured': outreach.mail_configured(c), 'lookup_enabled': bool(c.get('contact_lookup_enabled'))}
+
+    @app.get("/api/admin/reports/{report_id}/outreach")
+    def get_outreach(report_id: str, request: Request):
+        require_session(request, admin=True)
+        result = current_outreach(report_id)
+        report = report_json(active_report(report_id), include_private=True)
+        result['variants'] = [outreach.draft_for(report, variant) for variant in range(3)]
+        return result
+
+    @app.put("/api/admin/reports/{report_id}/outreach")
+    async def save_outreach(report_id: str, request: Request):
+        require_session(request, write=True, admin=True)
+        report = active_report(report_id)
+        data = await json_body(request)
+        fields = {'recipient_name':160, 'recipient_role':160, 'recipient_email':254,
+                  'source_url':2048, 'subject':250, 'body':10000}
+        values = {}
+        for field, limit in fields.items():
+            value = data.get(field, '')
+            if not isinstance(value, str) or len(value)>limit or '\x00' in value:
+                raise HTTPException(400, 'Kontrollera kontaktuppgifter och meddelande.')
+            if field != 'body' and any(x in value for x in '\r\n'):
+                raise HTTPException(400, 'Kontaktuppgifter och ämne får inte innehålla radbrytningar.')
+            values[field] = value.strip()
+        state = data.get('state', 'draft')
+        version = data.get('version')
+        contact_checked, content_checked = data.get('contact_checked', False), data.get('content_checked', False)
+        if state not in {'draft', 'ready'} or type(version) is not int or type(contact_checked) is not bool or type(content_checked) is not bool:
+            raise HTTPException(400, 'Kontrollera meddelandets status.')
+        if values['recipient_email'] and not outreach.valid_email(values['recipient_email']):
+            raise HTTPException(400, 'Ange en giltig mottagaradress.')
+        if values['source_url']:
+            try:
+                values['source_url'] = outreach.public_url(values['source_url'])
+            except ValueError as error:
+                raise HTTPException(400, str(error))
+        if state == 'ready':
+            if not report['review_checked'] or report['status'] in {'new', 'rejected', 'archived'}:
+                raise HTTPException(400, 'Granska och spara rapporten först.')
+            if not (contact_checked and content_checked and values['recipient_email'] and values['subject'] and values['body']):
+                raise HTTPException(400, 'Kontrollera mottagare och meddelande innan det läggs i utskickskön.')
+        with database(c) as db:
+            db.execute('BEGIN IMMEDIATE')
+            current_report = db.execute('SELECT review_checked,status FROM reports WHERE id=?', (report_id,)).fetchone()
+            if not current_report:
+                raise HTTPException(404, 'Rapporten finns inte.')
+            if state == 'ready' and (not current_report['review_checked'] or current_report['status'] in {'new','rejected','archived'}):
+                raise HTTPException(400, 'Rapportens granskning har ändrats. Granska rapporten igen.')
+            changed = db.execute("UPDATE outreach SET recipient_name=?,recipient_role=?,recipient_email=?,source_url=?,subject=?,body=?,state=?,contact_checked=?,content_checked=?,version=version+1,updated_at=?,error='' WHERE report_id=? AND version=? AND state IN ('draft','ready','failed')",
+                                 (*values.values(), state, int(contact_checked), int(content_checked), iso_now(), report_id, version)).rowcount
+        if not changed:
+            raise HTTPException(409, 'Utkastet har ändrats eller kan inte redigeras. Öppna det igen.')
+        audit(c, 'save_outreach', report_id)
+        return current_outreach(report_id)
+
+    @app.post("/api/admin/reports/{report_id}/contacts")
+    def search_contacts(report_id: str, request: Request):
+        require_session(request, write=True, admin=True)
+        report = active_report(report_id)
+        rate_limit(request, 'contact_lookup', 20, 3600)
+        if not c.get('contact_lookup_enabled'):
+            raise HTTPException(503, 'Kontaktsökning är inte aktiverad på servern.')
+        if not report['website']:
+            raise HTTPException(400, 'Rapporten saknar företagswebbplats. Lägg till en kontakt manuellt.')
+        find_contacts(report_id)
+        return {'completed': True}
+
+    @app.post("/api/admin/reports/{report_id}/outreach/send")
+    async def send_outreach(report_id: str, request: Request):
+        require_session(request, write=True, admin=True)
+        data = await json_body(request)
+        if type(data.get('version')) is not int:
+            raise HTTPException(400, 'Öppna meddelandet igen.')
+        if not outreach.mail_configured(c):
+            raise HTTPException(503, 'Mejltjänsten är inte ansluten. Meddelandet ligger kvar i kön.')
+        rate_limit(request, 'send_outreach', 30, 3600)
+        report = active_report(report_id)
+        with database(c) as db:
+            db.execute('BEGIN IMMEDIATE')
+            # Re-read under the write lock: report review and queue state are authoritative.
+            report = db.execute('SELECT * FROM reports WHERE id=?', (report_id,)).fetchone()
+            row = db.execute('SELECT * FROM outreach WHERE report_id=?', (report_id,)).fetchone()
+            if not report or not row:
+                raise HTTPException(404, 'Rapporten finns inte.')
+            if not report['review_checked'] or report['status'] in {'new', 'rejected', 'archived'}:
+                raise HTTPException(400, 'Rapporten behöver vara granskad före utskick.')
+            if row['state']!='ready' or row['version']!=data['version']:
+                raise HTTPException(409, 'Meddelandet är inte klart, har ändrats eller har redan skickats.')
+            if not row['contact_checked'] or not row['content_checked'] or not outreach.valid_email(row['recipient_email']):
+                raise HTTPException(400, 'Kontrollera meddelandet och mottagaren först.')
+            db.execute("UPDATE outreach SET state='sending',version=version+1,updated_at=? WHERE report_id=?", (iso_now(), report_id))
+            draft = dict(row)
+        try:
+            await run_in_threadpool(outreach.send_message, c, draft)
+        except outreach.DeliveryUncertain:
+            state, error = 'uncertain', 'Leveransstatus är okänd. Kontrollera mejltjänstens logg innan fler försök.'
+        except outreach.DeliveryRejected:
+            state, error = 'failed', 'Mejltjänsten avvisade meddelandet. Kontrollera anslutning och mottagare innan ett nytt försök.'
+        except Exception:
+            state, error = 'uncertain', 'Leveransstatus är okänd. Kontrollera eMarketeers logg före fler försök.'
+        else:
+            state, error = 'sent', ''
+        with database(c) as db:
+            db.execute('UPDATE outreach SET state=?,error=?,sent_at=?,updated_at=?,version=version+1 WHERE report_id=?',
+                       (state, error, iso_now() if state=='sent' else None, iso_now(), report_id))
+            if state=='sent':
+                db.execute("UPDATE reports SET status=CASE WHEN status='meeting' THEN status ELSE 'contacted' END WHERE id=?", (report_id,))
+        audit(c, 'outreach_'+state, report_id)
+        return current_outreach(report_id)
+
+    @app.post("/api/admin/reports/{report_id}/outreach/resolve")
+    async def resolve_outreach(report_id: str, request: Request):
+        require_session(request, write=True, admin=True)
+        active_report(report_id)
+        data = await json_body(request)
+        if data.get('checked_provider_log') is not True or data.get('state') not in {'sent', 'draft'} or type(data.get('version')) is not int:
+            raise HTTPException(400, 'Kontrollera mejltjänstens logg och ange utfallet.')
+        state = data['state']
+        current = current_outreach(report_id)
+        if current['state']=='sending' and (datetime.now(timezone.utc)-datetime.fromisoformat(current['updated_at'])).total_seconds()<300:
+            raise HTTPException(409, 'Utskick pågår. Vänta minst fem minuter och kontrollera sedan mejltjänstens logg.')
+        with database(c) as db:
+            changed = db.execute("UPDATE outreach SET state=?,sent_at=?,error='',content_checked=0,version=version+1,updated_at=? WHERE report_id=? AND version=? AND state IN ('sending','uncertain')",
+                                 (state, iso_now() if state=='sent' else None, iso_now(), report_id, data['version'])).rowcount
+            if not changed:
+                raise HTTPException(409, 'Meddelandets status har ändrats.')
+            if state=='sent':
+                db.execute("UPDATE reports SET status=CASE WHEN status='meeting' THEN status ELSE 'contacted' END WHERE id=?", (report_id,))
+        audit(c, 'resolve_outreach_'+state, report_id)
+        return current_outreach(report_id)
 
     @app.get("/healthz")
     def health():
