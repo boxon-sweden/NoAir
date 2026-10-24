@@ -16,18 +16,11 @@
   }
   const reportPath=id=>'/api/admin/reports/'+encodeURIComponent(id);
   const reviewOK=r=>r && r.review_checked && !['new','rejected','archived'].includes(r.status);
-  function demoVariants(r) {
-    const concerns={air:'mycket tomrum',filler:'mycket fyllnadsmaterial',oversized:'en stor låda i förhållande till innehållet',protection:'frågor om produktskyddet',other:'förpackningens utformning'};
-    const observation=r.issues.map(x=>concerns[x]).join(', ');
-    const openings=[`Via Noair, ett initiativ av Boxon, har vi fått en observation om ${observation} i en leverans från ${r.company}.`,`Vi på Boxon vill gärna prata med er om förpackningar. En observation via Noair om en leverans från ${r.company} rör ${observation}.`,`Kan en mer anpassad förpackning vara intressant för ${r.company}? Via Noair har vi fått en observation som rör ${observation}.`];
-    const terms=['laddare','skor','kläder','glas','papper','plast','luft'].filter(term=>new RegExp('\\b'+term+'\\b','i').test(r.comment||''));
-    return openings.map(opening=>({subject:`En fråga om förpackningar hos ${r.company}`,body:`Hej!\n\n${opening}${r.category?' Rapporten gäller produktkategorin '+r.category+'.':''}${terms.length?' I beskrivningen nämns '+terms.slice(0,3).join(', ')+'.':''}\n\nDet är en enskild kundobservation, inte en fullständig bedömning av er förpackningslösning. Vi vill gärna förstå era krav på produktskydd och packning och undersöka om en mer anpassad lösning kan vara relevant.\n\nÄr du rätt person att prata med om inköp av emballage, eller kan du hänvisa oss vidare? Har ni möjlighet till ett kort samtal?\n\nVänliga hälsningar,\nMarcus Gustafsson, Boxon`}));
-  }
   function syncDemo(){
     messages=messages.filter(m=>reports.some(r=>r.id===m.report_id));
     reports.forEach(r=>{
       let m=messages.find(x=>x.report_id===r.id);
-      if(!m){const variants=demoVariants(r);m={report_id:r.id,...variants[0],variants,state:'draft',version:1,recipient_name:'',recipient_role:'',recipient_email:'',source_url:'',contact_checked:false,content_checked:false,contacts:[],lookup_note:'Demo: kontaktsökningen använder bara fiktiva exempel.',error:''};messages.push(m);}
+      if(!m){const variants=window.noairSalesDrafts(r);m={report_id:r.id,...variants[0],variants,state:'draft',version:1,recipient_name:'',recipient_role:'',recipient_email:'',source_url:'',contact_checked:false,content_checked:false,contacts:[],lookup_note:'Demo: kontaktsökningen använder bara fiktiva exempel.',error:''};messages.push(m);}
       m.company=r.company;
       if(!reviewOK(r)&&['draft','ready','failed'].includes(m.state)){m.state='draft';m.content_checked=false;}
     });

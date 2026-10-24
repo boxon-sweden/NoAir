@@ -28,6 +28,7 @@
 </style>
 
 
+
 <style>
 /* Noair v2: visual layout based on the supplied reference images.
    Form/API contract is unchanged. Base stylesheet retains admin/dialog styles. */
@@ -495,11 +496,11 @@ body[data-page="admin"] { background:var(--paper); }
 <dialog class="text-dialog" id="delete-dialog"><button aria-label="Stäng" class="close-dialog" data-close="">×</button><p class="eyebrow">DU HAR KONTROLLEN</p><h2>Ta bort din rapport</h2><p>Fyll i rapportnumret och den privata raderingskoden från ditt kvitto. Åtgärden går inte att ångra.</p><form id="delete-form"><label for="delete-reference">Rapportnummer</label><input autocomplete="off" id="delete-reference" placeholder="NA-..." required=""/><label for="delete-token">Privat raderingskod</label><input autocomplete="off" id="delete-token" required=""/><p class="form-error" id="delete-error" role="alert"></p><button class="button dark" type="submit">Ta bort rapporten</button></form><p hidden="" id="delete-success" role="status">Rapporten och dess bilder har tagits bort från den aktiva tjänsten.</p></dialog>
 <dialog class="detail-dialog" id="detail-dialog"><button aria-label="Stäng" class="close-dialog" data-close="">×</button><div id="detail-content"></div></dialog>
 <dialog class="outreach-dialog text-dialog" id="outreach-dialog" aria-labelledby="outreach-editor-title"><button aria-label="Stäng" class="close-dialog" data-close="">×</button><p class="eyebrow">BOXON / KONTAKTUTKAST</p><h2 id="outreach-editor-title">Redigera meddelande</h2><p id="outreach-report-label"></p><p class="micro">Planerad avsändare: Marcus.gustafsson@boxon.com via eMarketeer (ansluts senare).</p>
-<p class="review-notice">Utkastet bygger på rapportens val, produktkategori och förpackningsord i beskrivningen. Bild och beskrivning granskas internt. Lägg till en saklig sammanfattning av din bildgranskning i texten. Originalbilder, kundens e-postadress och fritext skickas inte vidare automatiskt.</p>
+<p class="review-notice">Säljutkastet utgår från kundens upplevelse och produktuppgifter i beskrivningen, med ett första möte som mål. Bild och beskrivning granskas internt. Lägg till en saklig sammanfattning av din bildgranskning i texten. Originalbilder, kundens e-postadress och fritext skickas inte vidare automatiskt.</p>
 <details class="outreach-evidence"><summary>Visa kundens beskrivning för intern granskning</summary><blockquote id="outreach-evidence-text"></blockquote><p class="micro">Kontrollera också bilderna i rapportvyn före utskick.</p></details>
 <div class="outreach-contacts"><h3>Offentliga kontaktförslag</h3><p>Prioritet: emballage, förpackning och inköp. Namn och ansvar behöver verifieras mot källan.</p><button class="button outline small" id="lookup-outreach-contacts" type="button">Sök på företagets webbplats</button><p id="outreach-lookup-note" role="status"></p><div id="outreach-candidates"></div></div>
 <form id="outreach-form"><div class="outreach-fields"><div><label for="outreach-name">Kontaktperson</label><input id="outreach-name" maxlength="160" autocomplete="off"/></div><div><label for="outreach-role">Roll / ansvar</label><input id="outreach-role" maxlength="160" placeholder="Till exempel emballageinköp"/></div><div><label for="outreach-email">Mottagarens e-post</label><input id="outreach-email" type="email" maxlength="254"/></div><div><label for="outreach-source">Källa till kontaktuppgifterna</label><input id="outreach-source" type="url" maxlength="2048" placeholder="https://företag.se/kontakt"/></div></div>
-<label for="outreach-variant">Alternativ formulering</label><div class="outreach-variant"><select id="outreach-variant"><option value="0">Saklig introduktion</option><option value="1">Dialog om förpackningar</option><option value="2">Fråga om en anpassad lösning</option></select><button class="button outline small" id="vary-outreach" type="button">Använd formuleringen</button></div><p class="micro">Byter ämne och meddelandetext. Dina kontaktuppgifter behålls.</p>
+<label for="outreach-variant">Alternativ formulering</label><div class="outreach-variant"><select id="outreach-variant"><option value="0">Kundinsikt → konkret lösning</option><option value="1">Kundupplevelsen i fokus</option><option value="2">Kort pitch med mötesförslag</option></select><button class="button outline small" id="vary-outreach" type="button">Använd formuleringen</button></div><p class="micro">Byter ämne och meddelandetext. Dina kontaktuppgifter behålls.</p>
 <label for="outreach-subject">Ämne</label><input id="outreach-subject" maxlength="250"/><label for="outreach-body">Meddelande – kan redigeras fullt ut</label><textarea id="outreach-body" rows="12" maxlength="10000"></textarea>
 <label class="check-label"><input id="outreach-contact-checked" type="checkbox"/><span>Jag har verifierat rätt företag, mottagaradress och kontaktens relevans.</span></label><label class="check-label"><input id="outreach-content-checked" type="checkbox"/><span>Jag har granskat bild, beskrivning och mejltext. Texten är saklig och innehåller inga privata kunduppgifter.</span></label>
 <p class="form-error" id="outreach-editor-error" role="alert"></p><p id="outreach-delivery-state" role="status"></p><div class="outreach-editor-actions"><button class="button outline" id="save-outreach-draft" type="button">Spara utkast</button><button class="button dark" id="ready-outreach" type="submit">Lägg i utskickskön</button></div>
@@ -508,6 +509,54 @@ body[data-page="admin"] { background:var(--paper); }
 <div hidden="" id="toast" role="status"></div>
 <noscript><p>Du behöver aktivera JavaScript för att skicka in en rapport.</p></noscript>
 <script>
+'use strict';
+// Shared by the original contact preview and the editable outreach queue.
+// Keep the server copy in outreach.draft_for in sync (covered by browser tests).
+window.noairSalesDrafts = report => {
+  const products=[['hörlurar(?:na)?','hörlurar'],['headset(?:et)?','ett headset'],['laddare(?:n)?','en laddare'],['mobilskal(?:et)?','ett mobilskal'],['tangentbord(?:et)?','ett tangentbord'],['datormus(?:en)?','en datormus'],['kab(?:el|eln|lar|larna)','kablar'],['skor(?:na)?','skor'],['kläder(?:na)?','kläder'],['tröj(?:a|an|or|orna)','en tröja'],['bok(?:en)?|böcker(?:na)?','böcker']];
+  const comment=(report.comment||'').replace(/\S+@\S+|https?:\/\/\S+/gi,match=>' '.repeat(match.length));
+  const candidates=[];
+  products.forEach(([pattern,label])=>{
+    const regex=new RegExp('(?<![\\p{L}\\p{N}_])(?:'+pattern+')(?![\\p{L}\\p{N}_])','giu');
+    for(const match of comment.matchAll(regex)){
+      const start=Math.max(...['.','!','?','\n'].map(mark=>comment.lastIndexOf(mark,match.index-1)))+1;
+      const prefix=comment.slice(start,match.index);
+      if(/\b(inte|ingen|inget|inga|istället för|i stället för|som om|till exempel|exempelvis|skulle|kunde|kanske)\b/i.test(prefix))continue;
+      candidates.push([match.index,label]);
+    }
+  });
+  candidates.sort((a,b)=>a[0]-b[0]);
+  const product=candidates[0]?.[1]||'';
+  const company=String(report.company).replace(/[\r\n\x00-\x1f]/g,' ').trim();
+  const selected=new Set(report.issues);
+  const category={'Elektronik':'elektronik','Kläder & skor':'kläder eller skor','Hem & inredning':'hem- och inredningsprodukter','Sport & fritid':'sport- och fritidsprodukter'}[report.category]||'';
+  const delivery=product?'en leverans med '+product:(category?'en leverans av '+category:'en leverans');
+  const observations=[];
+  if(selected.has('oversized'))observations.push('att lådan var stor i förhållande till innehållet');
+  if(selected.has('air'))observations.push('att det fanns mycket tomrum i paketet');
+  if(selected.has('filler'))observations.push('att det användes mycket fyllnadsmaterial');
+  if(selected.has('protection'))observations.push('att produkten inte upplevdes vara tillräckligt skyddad');
+  const observation=observations.length?observations.slice(0,2).join(' och '):'att förpackningen kunde vara bättre anpassad till innehållet';
+  const insight=`Via Noair, Boxons initiativ för att fånga upp konsumenters leveransupplevelser, har vi fått en rapport från en av era kunder om ${delivery} från ${company}. Kunden beskriver ${observation}.`;
+  let proposal;
+  if(selected.has('protection'))proposal='en lösning med bättre passform och anpassad stötdämpning, där vi utvärderar skyddet för produkten';
+  else if(selected.has('air')||selected.has('oversized'))proposal='ett mindre lådformat och en anpassad insats, med rätt skydd för innehållet';
+  else if(selected.has('filler'))proposal='bättre passform och en anpassad insats som kan minska behovet av fyllnadsmaterial';
+  else proposal='ett mer anpassat format, material och produktskydd';
+  const expertise='Vi på Boxon är specialister på att skräddarsy förpackningar efter produkten och hur den ska levereras.';
+  const offer=`I det här fallet skulle vi vilja undersöka ${proposal}.`;
+  const value='Målet är en mer genomtänkt uppackning för kunden och mindre onödigt emballage för er.';
+  const cost='Kundunikt behöver inte bli dyrt. Vi jämför gärna ett anpassat alternativ med dagens lösning, både i funktion och kostnad.';
+  const meeting='Har du 15 minuter nästa vecka? Jag visar gärna hur vi skulle ta oss an just den här leveransen och undersöka om vi kan erbjuda er en bättre lösning.';
+  const referral='Om någon annan ansvarar för emballageinköp hos er får du gärna hänvisa mig rätt.';
+  const variants=[
+    {subject:`En kundinsikt om era förpackningar, ${company}`,body:`Hej!\n\n${insight}\n\n${expertise} ${offer} ${value}\n\n${cost}\n\n${meeting}\n\n${referral}`},
+    {subject:`Kan nästa paket från ${company} ge ett bättre intryck?`,body:`Hej!\n\nEn bra produkt förtjänar en leverans som känns lika genomtänkt. ${insight}\n\n${expertise} ${offer} Det kan vara en möjlighet att förbättra kundupplevelsen redan när paketet öppnas.\n\n${cost}\n\nKan vi boka ett kort möte på 15 minuter nästa vecka och titta på vad Boxon skulle kunna göra för er?\n\n${referral}`},
+    {subject:`15 minuter om ett mer anpassat paket hos ${company}?`,body:`Hej!\n\n${insight}\n\nJag hör av mig från Boxon, där vi hjälper företag med kundunika förpackningslösningar. ${offer} Ambitionen är att göra förpackningen till en bättre del av kundupplevelsen.\n\nSkräddarsytt behöver inte betyda en dyrare lösning. Låt oss börja med att se vad som är möjligt för just er produkt och era volymer.\n\nPassar ett första samtal på 15 minuter nästa vecka? Då kan vi utgå från den här leveransen och prata om ett konkret alternativ från Boxon.\n\n${referral}`}
+  ];
+  return variants.map(v=>({...v,body:v.body+'\n\nVänliga hälsningar,\nMarcus Gustafsson\nBoxon'}));
+};
+
 'use strict';
 (() => {
   const $ = (s, p = document) => p.querySelector(s);
@@ -683,7 +732,7 @@ body[data-page="admin"] { background:var(--paper); }
   $('#logout').addEventListener('click',async()=>{try{const data=await api('/api/logout',{method:'POST',body:{}});csrf=data.csrf;authenticated=false;allReports=[];await loadDashboard();}catch(e){toast(e.message);}});
   $('#refresh-reports').addEventListener('click',()=>loadDashboard());$('#report-search').addEventListener('input',renderDashboard);$('#status-filter').addEventListener('change',renderDashboard);
   $('#export-csv').addEventListener('click',()=>{if(!demo){location.href='/api/admin/export';return;}const clean=v=>'"'+String(v??'').replace(/^[=+@\-\t\r]/,"'$&").replace(/"/g,'""')+'"';const rows=[['Rapport','F\u00f6retag','Webbplats','Datum','Status','Upplevelse'],...allReports.map(r=>[r.id,r.company,r.website,r.created_at,statuses[r.status],r.issues.map(i=>issues[i]).join(', ')])];saveFile('\uFEFF'+rows.map(r=>r.map(clean).join(';')).join('\r\n'),'text/csv;charset=utf-8','noair-demo-oversikt.csv');});
-  function outreach(r){return `Hej!\n\nVia Noair, ett initiativ av Boxon, har vi f\u00e5tt in en rapport om utrymmet och packningen i ett paket fr\u00e5n ${r.company}. Underlaget \u00e4r en enskild observation, inte en fullst\u00e4ndig bed\u00f6mning av er f\u00f6rpackningsl\u00f6sning.\n\nVi vill g\u00e4rna f\u00f6rst\u00e5 era krav p\u00e5 produktskydd och packning och unders\u00f6ka om en mer anpassad f\u00f6rpackning kan vara relevant.\n\nHar ni m\u00f6jlighet till ett kort m\u00f6te om detta?\n\nV\u00e4nliga h\u00e4lsningar,\n[Avs\u00e4ndare], Boxon`;}
+  function outreach(r){return window.noairSalesDrafts(r)[0].body;}
   async function openReport(id){
     let r=allReports.find(x=>x.id===id);if(!r)return;
     if(!demo){try{r=await api('/api/admin/reports/'+encodeURIComponent(id));}catch(e){toast(e.message);return;}}
@@ -716,18 +765,11 @@ body[data-page="admin"] { background:var(--paper); }
   }
   const reportPath=id=>'/api/admin/reports/'+encodeURIComponent(id);
   const reviewOK=r=>r && r.review_checked && !['new','rejected','archived'].includes(r.status);
-  function demoVariants(r) {
-    const concerns={air:'mycket tomrum',filler:'mycket fyllnadsmaterial',oversized:'en stor låda i förhållande till innehållet',protection:'frågor om produktskyddet',other:'förpackningens utformning'};
-    const observation=r.issues.map(x=>concerns[x]).join(', ');
-    const openings=[`Via Noair, ett initiativ av Boxon, har vi fått en observation om ${observation} i en leverans från ${r.company}.`,`Vi på Boxon vill gärna prata med er om förpackningar. En observation via Noair om en leverans från ${r.company} rör ${observation}.`,`Kan en mer anpassad förpackning vara intressant för ${r.company}? Via Noair har vi fått en observation som rör ${observation}.`];
-    const terms=['laddare','skor','kläder','glas','papper','plast','luft'].filter(term=>new RegExp('\\b'+term+'\\b','i').test(r.comment||''));
-    return openings.map(opening=>({subject:`En fråga om förpackningar hos ${r.company}`,body:`Hej!\n\n${opening}${r.category?' Rapporten gäller produktkategorin '+r.category+'.':''}${terms.length?' I beskrivningen nämns '+terms.slice(0,3).join(', ')+'.':''}\n\nDet är en enskild kundobservation, inte en fullständig bedömning av er förpackningslösning. Vi vill gärna förstå era krav på produktskydd och packning och undersöka om en mer anpassad lösning kan vara relevant.\n\nÄr du rätt person att prata med om inköp av emballage, eller kan du hänvisa oss vidare? Har ni möjlighet till ett kort samtal?\n\nVänliga hälsningar,\nMarcus Gustafsson, Boxon`}));
-  }
   function syncDemo(){
     messages=messages.filter(m=>reports.some(r=>r.id===m.report_id));
     reports.forEach(r=>{
       let m=messages.find(x=>x.report_id===r.id);
-      if(!m){const variants=demoVariants(r);m={report_id:r.id,...variants[0],variants,state:'draft',version:1,recipient_name:'',recipient_role:'',recipient_email:'',source_url:'',contact_checked:false,content_checked:false,contacts:[],lookup_note:'Demo: kontaktsökningen använder bara fiktiva exempel.',error:''};messages.push(m);}
+      if(!m){const variants=window.noairSalesDrafts(r);m={report_id:r.id,...variants[0],variants,state:'draft',version:1,recipient_name:'',recipient_role:'',recipient_email:'',source_url:'',contact_checked:false,content_checked:false,contacts:[],lookup_note:'Demo: kontaktsökningen använder bara fiktiva exempel.',error:''};messages.push(m);}
       m.company=r.company;
       if(!reviewOK(r)&&['draft','ready','failed'].includes(m.state)){m.state='draft';m.content_checked=false;}
     });

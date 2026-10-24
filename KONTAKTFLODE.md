@@ -20,12 +20,24 @@ Marcus.gustafsson@boxon.com.
 5. I demon heter åtgärden **Simulera utskick**. Inget mejl eller nätverksanrop
    till ett företag görs. Allt ligger i webbläsarminnet och försvinner vid omladdning.
 
-Utkasten är lokala textmallar med variationer, inte en AI-tjänst. De använder
-företagsnamn, upplevelsekategorier, produktkategori och en begränsad ordlista av
-förpacknings-/produktord i beskrivningen. Kundens fria kommentar kopieras inte
-in. Bilder analyseras inte maskinellt: medarbetaren ser dem i rapportvyn och
-kan lägga in en saklig sammanfattning i den redigerbara mejltexten.
-Kundens e-post och originalbilder bifogas aldrig automatiskt.
+Utkasten är lokala säljpitchar med tre variationer: kundinsikt och konkret lösning,
+kundupplevelsen i fokus samt en kort mötespitch. De använder företagsnamn,
+upplevelsekategorier och identifierbara produktord i beskrivningen, till exempel
+hörlurar, headset, laddare, mobilskal eller skor. Saknas en sådan uppgift används
+produktkategorin eller en allmän leveransbeskrivning. Texten tillskriver upplevelsen
+en kundrapport och utgår inte från att företaget handlar av en viss konkurrent.
+Förslaget anpassas efter tomrum, fyllnadsmaterial eller skyddsbehov. Målet är ett
+första möte på 15 minuter om en kundunik förpackningslösning från Boxon.
+Kostnaden formuleras som något att jämföra, inte en garanterad besparing.
+
+Kundens fria kommentar kopieras inte in. Bilder analyseras inte maskinellt:
+medarbetaren ser dem i rapportvyn och kan lägga in en saklig sammanfattning i
+mejltexten. Produktmatchningen är en begränsad ordlista, inte AI eller fullständig
+språkförståelse. Kundens e-post och originalbilder bifogas aldrig automatiskt.
+
+Befintliga sparade utkast skrivs inte över vid en uppdatering av mallarna. Öppna
+utkastet och välj en ny formulering för att använda säljpitchen även där. Det
+ursprungliga **Visa kontaktutkast** använder också den nya säljpitchen.
 
 ## Offentliga kontakter på servern
 

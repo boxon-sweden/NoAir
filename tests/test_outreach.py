@@ -42,7 +42,7 @@ def test_draft_created_automatically_without_private_customer_data(client):
     report_id, token = reviewed(client)
     m = client.get(message_path(report_id)).json()
     assert m['state']=='draft'
-    assert 'tomrum' in m['body'] and 'Elektronik' in m['body'] and 'laddare' in m['body']
+    assert 'tomrum' in m['body'] and 'laddare' in m['body'] and '15 minuter' in m['body']
     assert 'kund@example.invalid' not in m['body']
     assert len(m['variants'])==3 and len({v['body'] for v in m['variants']})==3
     queue=client.get('/api/admin/outreach').json()
@@ -251,3 +251,38 @@ def test_public_fetch_pins_ip_and_keeps_tls_hostname_verification(monkeypatch):
     result=outreach.fetch_public('https://butik.example/kontakt')
     assert 'inkop@butik.example' in result['html']
     assert events==[('connect',('8.8.8.8',443))]
+
+
+@pytest.mark.parametrize('variant',range(3))
+def test_sales_pitch_uses_customer_product_boxon_solution_and_meeting(variant):
+    report={'company':'Hörlurbutiken','issues':['air','oversized'],'category':'Elektronik',
+            'comment':'Jag beställde hörlurar men fick en jättestor låda. Mitt namn: Privat Kund, privat@example.invalid, 0701234567.'}
+    draft=outreach.draft_for(report,variant)
+    body=draft['body']
+    assert 'hörlurar' in body and 'Hörlurbutiken' in body
+    assert 'en av era kunder' in body and 'tomrum' in body
+    assert 'mindre lådformat och en anpassad insats' in body
+    assert '15 minuter' in body and 'nästa vecka' in body and 'Boxon' in body
+    assert 'Marcus Gustafsson' in body
+    assert not any(value in body for value in ['Privat Kund','privat@example.invalid','0701234567','konkurrent'])
+    assert 'garanter' not in body.lower()
+
+
+def test_product_detection_ignores_negated_and_hypothetical_mentions():
+    assert outreach.product_from_text('Det var inte hörlurar. Jag fick en laddare.')=='en laddare'
+    assert outreach.product_from_text('Lådan skulle kunna rymma skor.')==''
+    assert outreach.product_from_text('Kontakt: hörlurar@example.invalid och https://butik.example/skor')==''
+    assert outreach.product_from_text('HÖRLURARNA låg i en stor låda.')=='hörlurar'
+
+
+def test_pitch_proposal_changes_with_protection_and_filler():
+    base={'company':'Butik','category':'','comment':'','issues':['protection','air']}
+    protected=outreach.draft_for(base)['body']
+    assert 'anpassad stötdämpning' in protected
+    assert 'mindre lådformat' not in protected
+    base['issues']=['filler']
+    filler=outreach.draft_for(base)['body']
+    assert 'minska behovet av fyllnadsmaterial' in filler
+    assert 'hörlurar' not in filler
+    base['category']='Elektronik'
+    assert 'en leverans av elektronik' in outreach.draft_for(base)['body']

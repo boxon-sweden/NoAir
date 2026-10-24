@@ -24,30 +24,79 @@ def valid_email(value):
     return isinstance(value, str) and len(value) <= 254 and EMAIL.fullmatch(value) is not None
 
 
+# Only product names from this vocabulary enter drafts automatically. Arbitrary
+# customer text, contact details and image contents remain private.
+PRODUCTS = [
+    (r'hörlurar(?:na)?', 'hörlurar'), (r'headset(?:et)?', 'ett headset'),
+    (r'laddare(?:n)?', 'en laddare'), (r'mobilskal(?:et)?', 'ett mobilskal'),
+    (r'tangentbord(?:et)?', 'ett tangentbord'), (r'datormus(?:en)?', 'en datormus'),
+    (r'kab(?:el|eln|lar|larna)', 'kablar'), (r'skor(?:na)?', 'skor'),
+    (r'kläder(?:na)?', 'kläder'), (r'tröj(?:a|an|or|orna)', 'en tröja'),
+    (r'bok(?:en)?|böcker(?:na)?', 'böcker'),
+]
+
+
+def product_from_text(comment):
+    comment = re.sub(r'\S+@\S+|https?://\S+', lambda m: ' '*len(m.group()), comment, flags=re.I)
+    candidates = []
+    for pattern, label in PRODUCTS:
+        for match in re.finditer(r'(?<!\w)(?:'+pattern+r')(?!\w)', comment, re.I):
+            # Be conservative about negations and hypothetical comparisons.
+            sentence_start = max(comment.rfind(mark, 0, match.start()) for mark in '.!?\n') + 1
+            prefix = comment[sentence_start:match.start()]
+            if re.search(r'\b(inte|ingen|inget|inga|istället för|i stället för|som om|till exempel|exempelvis|skulle|kunde|kanske)\b', prefix, re.I):
+                continue
+            candidates.append((match.start(), label))
+    return min(candidates)[1] if candidates else ''
+
+
 def draft_for(report, variant=0):
-    """Use structured observations. Private free text is for internal review only."""
+    """First-contact sales pitch based on attributed, report-specific observations."""
     company = re.sub(r'[\r\n\x00-\x1f]', ' ', report['company']).strip()
-    labels = [LABELS[x] for x in report['issues'] if x in LABELS]
-    insight = ', '.join(labels) or 'förpackningens utformning'
-    openings = [
-        f'Via Noair, ett initiativ av Boxon, har vi fått en observation om {insight} i en leverans från {company}.',
-        f'Vi på Boxon vill gärna prata med er om förpackningar. En observation via Noair om en leverans från {company} rör {insight}.',
-        f'Kan en mer anpassad förpackning vara intressant för {company}? Via Noair har vi fått en observation som rör {insight}.',
+    selected = set(report['issues'])
+    product = product_from_text(report.get('comment', ''))
+    category = {'Elektronik':'elektronik', 'Kläder & skor':'kläder eller skor',
+                'Hem & inredning':'hem- och inredningsprodukter',
+                'Sport & fritid':'sport- och fritidsprodukter'}.get(report.get('category', ''), '')
+    delivery = 'en leverans med '+product if product else ('en leverans av '+category if category else 'en leverans')
+    observations = []
+    if 'oversized' in selected:
+        observations.append('att lådan var stor i förhållande till innehållet')
+    if 'air' in selected:
+        observations.append('att det fanns mycket tomrum i paketet')
+    if 'filler' in selected:
+        observations.append('att det användes mycket fyllnadsmaterial')
+    if 'protection' in selected:
+        observations.append('att produkten inte upplevdes vara tillräckligt skyddad')
+    observation = ' och '.join(observations[:2]) if observations else 'att förpackningen kunde vara bättre anpassad till innehållet'
+    insight = (f'Via Noair, Boxons initiativ för att fånga upp konsumenters leveransupplevelser, '
+               f'har vi fått en rapport från en av era kunder om {delivery} från {company}. '
+               f'Kunden beskriver {observation}.')
+    if 'protection' in selected:
+        proposal = 'en lösning med bättre passform och anpassad stötdämpning, där vi utvärderar skyddet för produkten'
+    elif selected & {'air', 'oversized'}:
+        proposal = 'ett mindre lådformat och en anpassad insats, med rätt skydd för innehållet'
+    elif 'filler' in selected:
+        proposal = 'bättre passform och en anpassad insats som kan minska behovet av fyllnadsmaterial'
+    else:
+        proposal = 'ett mer anpassat format, material och produktskydd'
+    expertise = 'Vi på Boxon är specialister på att skräddarsy förpackningar efter produkten och hur den ska levereras.'
+    offer = f'I det här fallet skulle vi vilja undersöka {proposal}.'
+    value = 'Målet är en mer genomtänkt uppackning för kunden och mindre onödigt emballage för er.'
+    cost = 'Kundunikt behöver inte bli dyrt. Vi jämför gärna ett anpassat alternativ med dagens lösning, både i funktion och kostnad.'
+    meeting = 'Har du 15 minuter nästa vecka? Jag visar gärna hur vi skulle ta oss an just den här leveransen och undersöka om vi kan erbjuda er en bättre lösning.'
+    referral = 'Om någon annan ansvarar för emballageinköp hos er får du gärna hänvisa mig rätt.'
+    variants = [
+        {'subject': f'En kundinsikt om era förpackningar, {company}',
+         'body': f'Hej!\n\n{insight}\n\n{expertise} {offer} {value}\n\n{cost}\n\n{meeting}\n\n{referral}'},
+        {'subject': f'Kan nästa paket från {company} ge ett bättre intryck?',
+         'body': f'Hej!\n\nEn bra produkt förtjänar en leverans som känns lika genomtänkt. {insight}\n\n{expertise} {offer} Det kan vara en möjlighet att förbättra kundupplevelsen redan när paketet öppnas.\n\n{cost}\n\nKan vi boka ett kort möte på 15 minuter nästa vecka och titta på vad Boxon skulle kunna göra för er?\n\n{referral}'},
+        {'subject': f'15 minuter om ett mer anpassat paket hos {company}?',
+         'body': f'Hej!\n\n{insight}\n\nJag hör av mig från Boxon, där vi hjälper företag med kundunika förpackningslösningar. {offer} Ambitionen är att göra förpackningen till en bättre del av kundupplevelsen.\n\nSkräddarsytt behöver inte betyda en dyrare lösning. Låt oss börja med att se vad som är möjligt för just er produkt och era volymer.\n\nPassar ett första samtal på 15 minuter nästa vecka? Då kan vi utgå från den här leveransen och prata om ett konkret alternativ från Boxon.\n\n{referral}'},
     ]
-    category = report.get('category', '')
-    category_line = f' Rapporten gäller produktkategorin {category}.' if category else ''
-    # Do not forward arbitrary customer text. Use only a fixed vocabulary of
-    # packaging/product terms, with clear attribution rather than inferred facts.
-    comment = report.get('comment', '')
-    terms = [term for term in ('laddare', 'skor', 'kläder', 'glas', 'papper', 'plast', 'luft')
-             if re.search(r'\b'+term+r'\b', comment, re.I)]
-    if terms:
-        category_line += ' I beskrivningen nämns ' + ', '.join(terms[:3]) + '.' 
-    body = ('Hej!\n\n' + openings[variant % len(openings)] + category_line +
-            '\n\nDet är en enskild kundobservation, inte en fullständig bedömning av er förpackningslösning. Vi vill gärna förstå era krav på produktskydd och packning och undersöka om en mer anpassad lösning kan vara relevant.' +
-            '\n\nÄr du rätt person att prata med om inköp av emballage, eller kan du hänvisa oss vidare? Har ni möjlighet till ett kort samtal?' +
-            '\n\nVänliga hälsningar,\nBoxon')
-    return {'subject': f'En fråga om förpackningar hos {company}', 'body': body}
+    result = variants[variant % len(variants)].copy()
+    result['body'] += '\n\nVänliga hälsningar,\nMarcus Gustafsson\nBoxon'
+    return result
 
 
 class PublicPage(HTMLParser):

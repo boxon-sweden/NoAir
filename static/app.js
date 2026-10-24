@@ -173,7 +173,7 @@
   $('#logout').addEventListener('click',async()=>{try{const data=await api('/api/logout',{method:'POST',body:{}});csrf=data.csrf;authenticated=false;allReports=[];await loadDashboard();}catch(e){toast(e.message);}});
   $('#refresh-reports').addEventListener('click',()=>loadDashboard());$('#report-search').addEventListener('input',renderDashboard);$('#status-filter').addEventListener('change',renderDashboard);
   $('#export-csv').addEventListener('click',()=>{if(!demo){location.href='/api/admin/export';return;}const clean=v=>'"'+String(v??'').replace(/^[=+@\-\t\r]/,"'$&").replace(/"/g,'""')+'"';const rows=[['Rapport','F\u00f6retag','Webbplats','Datum','Status','Upplevelse'],...allReports.map(r=>[r.id,r.company,r.website,r.created_at,statuses[r.status],r.issues.map(i=>issues[i]).join(', ')])];saveFile('\uFEFF'+rows.map(r=>r.map(clean).join(';')).join('\r\n'),'text/csv;charset=utf-8','noair-demo-oversikt.csv');});
-  function outreach(r){return `Hej!\n\nVia Noair, ett initiativ av Boxon, har vi f\u00e5tt in en rapport om utrymmet och packningen i ett paket fr\u00e5n ${r.company}. Underlaget \u00e4r en enskild observation, inte en fullst\u00e4ndig bed\u00f6mning av er f\u00f6rpackningsl\u00f6sning.\n\nVi vill g\u00e4rna f\u00f6rst\u00e5 era krav p\u00e5 produktskydd och packning och unders\u00f6ka om en mer anpassad f\u00f6rpackning kan vara relevant.\n\nHar ni m\u00f6jlighet till ett kort m\u00f6te om detta?\n\nV\u00e4nliga h\u00e4lsningar,\n[Avs\u00e4ndare], Boxon`;}
+  function outreach(r){return window.noairSalesDrafts(r)[0].body;}
   async function openReport(id){
     let r=allReports.find(x=>x.id===id);if(!r)return;
     if(!demo){try{r=await api('/api/admin/reports/'+encodeURIComponent(id));}catch(e){toast(e.message);return;}}

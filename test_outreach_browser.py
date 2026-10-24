@@ -11,6 +11,7 @@ import urllib.request
 
 from argon2 import PasswordHasher
 from PIL import Image
+from outreach import draft_for
 from playwright.sync_api import sync_playwright, expect
 
 ROOT=Path(__file__).resolve().parent
@@ -69,6 +70,16 @@ with tempfile.TemporaryDirectory(prefix='noair-outreach-qa-') as tmp_name:
             page.on('pageerror',lambda e:errors.append(str(e)))
             page.on('request',lambda r:requests.append(r.url))
             page.set_content((ROOT/'noair-forhandsvisning.html').read_text())
+            pitch_cases=[
+                {'company':'Testbutik','category':'Elektronik','issues':['air','oversized'],'comment':'Jag beställde hörlurar och lådan var för stor.'},
+                {'company':'Butik & Co','category':'Hem & inredning','issues':['protection','air'],'comment':'Det var inte hörlurar. Jag fick en laddare.'},
+                {'company':'Exempel','category':'Kläder & skor','issues':['filler'],'comment':'Köpte skor. Frågor: privat@example.invalid.'},
+                {'company':'Annat','category':'','issues':['other'],'comment':'Ingen produkt angiven.'},
+            ]
+            for report in pitch_cases:
+                actual=page.evaluate('(r)=>window.noairSalesDrafts(r)',report)
+                assert actual==[draft_for(report,i) for i in range(3)]
+            check('All sales pitch variants match between demo and backend, with report-specific products')
             page.locator('[data-view="admin"]').click()
             expect(page.locator('.outreach-queue-item')).to_have_count(3)
             check('Every demo report receives an outreach draft')
